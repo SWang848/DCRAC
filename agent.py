@@ -116,11 +116,16 @@ class DCRACAgent:
         self.gpu_setting = gpu_setting
 
         # Tensorflow GPU optimization.
-        config = tf.ConfigProto()
+        config = tf.compat.v1.ConfigProto()
         config.gpu_options.allow_growth = True
-        sess = tf.Session(config=config)
-        from keras import backend as K
-        K.set_session(sess)
+        sess = tf.compat.v1.Session(config=config)
+        tf.compat.v1.keras.backend.set_session(sess)
+
+        # config = tf.ConfigProto()
+        # config.gpu_options.allow_growth = True
+        # sess = tf.Session(config=config)
+        # from keras import backend as K
+        # K.set_session(sess)
 
         # Initialize the history 
         self.history = History(self.timesteps, self.im_shape, self.nb_action)

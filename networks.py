@@ -249,7 +249,7 @@ class Actor(Network):
             acts_prob = self.target_model.predict([weight, observation, action_last])
         else:
             acts_prob = self.model.predict([weight, observation, action_last])
-
+            
         action = np.random.choice(range(acts_prob.shape[1]), p=acts_prob.ravel()) if stochastic else np.argmax(acts_prob.ravel())
 
         if return_probs:
@@ -491,7 +491,8 @@ class ActorCritic(Critic):
         else:
             q_value, acts_prob = self.model.predict([weight, observation, action_last_input])
 
-        ap = acts_prob[0] if use_prob else np.dot(q_value[0], weight[0]) 
+        # ap = acts_prob[0] if use_prob else np.dot(q_value[0], weight[0])
+        ap = acts_prob[0]
 
         action = np.random.choice(range(acts_prob.shape[1]), p=ap) if stochastic else np.argmax(ap)
 

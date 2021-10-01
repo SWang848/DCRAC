@@ -41,7 +41,7 @@ parser.add_option('-f', '--frame-skip', dest='frame_skip', default='4', help='Fr
 parser.add_option('-b', '--batch-size', dest='batch_size', default='16', help='Sample batch size', type=int)
 parser.add_option('-g', '--discount', dest='discount', default='0.95', help='Discount factor', type=float)
 parser.add_option('--anneal-steps', dest='steps', default='10000', help='steps',  type=int)
-parser.add_option('-p', '--mode', dest='mode', choices=['regular', 'sparse'], default='sparse')
+parser.add_option('-p', '--mode', dest='mode', choices=['regular', 'sparse'], default='regular')
 parser.add_option('-v', '--obj-func', dest='obj_func', choices=['a', 'ap', 'td', 'q', 'y'], default='a')
 parser.add_option('--no-action', dest='action_conc', action='store_false', default=True)
 parser.add_option('--no-embd', dest='feature_embd', action='store_false', default=True)
@@ -56,7 +56,7 @@ hyper_info = '{}_{}-r{}{}-d{}-t{}-batsiz{}-{}steps-lr{}-lr2{}-{}-acteval_{}'.for
     options.batch_size, options.steps, str(options.lr_c), str(options.lr_a), options.mode, options.obj_func)
 
 # create evironment
-env = DeepSeaTreasure(view=(5,5), scale=9) if options.dst_view == '5' else DeepSeaTreasure(view=(3,3), scale=15)
+env = DeepSeaTreasure(view=(5,5), full=True, scale=9) if options.dst_view == '5' else DeepSeaTreasure(view=(3,3), scale=15)
 
 all_weights = get_weights_from_json('./train_weights_dst.json') if options.mode == 'sparse' else get_weights_from_json('./train_weights_dst_r.json')
 timestamp = time.strftime('%m%d_%H%M', time.localtime())
