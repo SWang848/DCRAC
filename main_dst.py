@@ -27,18 +27,18 @@ parser = OptionParser()
 parser.add_option('-a', '--agent', dest='agent', choices=['DCRAC', 'DCRACS', 'DCRACSE', 'DCRAC0', 'CN', 'CN0'], default='DCRACS')
 parser.add_option('-n', '--net-type', dest='net_type', choices=['R', 'M', 'F'], default='R', help='Agent architecture type: [R]ecurrent, [M]emNN or [F]C')
 parser.add_option('-r', '--replay', dest='replay', default='DER', choices=['STD', 'DER'], help='Replay type, one of "STD","DER"')
-parser.add_option('-s', '--buffer-size', dest='buffer_size', default='2500', help='Replay buffer size', type=int)
-parser.add_option('-m', '--memnn-size', dest='memnn_size', default='9', help='Memory network memory size', type=int)
+parser.add_option('-s', '--buffer-size', dest='buffer_size', default='10000', help='Replay buffer size', type=int)
+parser.add_option('-m', '--memnn-size', dest='memnn_size', default='4', help='Memory network memory size', type=int)
 parser.add_option('-d', '--dup', dest='dup', action='store_false', default=True, help='Extra training')
-parser.add_option('-t', '--timesteps', dest='timesteps', default='10', help='Recurrent timesteps', type=int)
+parser.add_option('-t', '--timesteps', dest='timesteps', default='4', help='Recurrent timesteps', type=int)
 parser.add_option('-e', '--end_e', dest='end_e', default='0.01', help='Final epsilon value', type=float)
 parser.add_option('-l', '--lr-c', dest='lr_c', default='0.02', help='Critic learning rate', type=float)
 parser.add_option('-L', '--lr-a', dest='lr_a', default='0.25', help='Actor learning rate', type=float)
 parser.add_option('--buffer-a', dest='buffer_a', default='2.', help='reply buffer error exponent', type=float)
 parser.add_option('--buffer-e', dest='buffer_e', default='0.01', help='reply buffer error offset', type=float)
-parser.add_option('-u', '--update-period', dest='updates', default='4', help='Update interval', type=int)
+parser.add_option('-u', '--update-period', dest='updates', default='1', help='Update interval', type=int)
 parser.add_option('-f', '--frame-skip', dest='frame_skip', default='4', help='Frame skip', type=int)
-parser.add_option('-b', '--batch-size', dest='batch_size', default='16', help='Sample batch size', type=int)
+parser.add_option('-b', '--batch-size', dest='batch_size', default='64', help='Sample batch size', type=int)
 parser.add_option('-g', '--discount', dest='discount', default='0.95', help='Discount factor', type=float)
 parser.add_option('--anneal-steps', dest='steps', default='10000', help='steps',  type=int)
 parser.add_option('-p', '--mode', dest='mode', choices=['regular', 'sparse'], default='regular')
@@ -48,12 +48,13 @@ parser.add_option('--no-embd', dest='feature_embd', action='store_false', defaul
 parser.add_option('--gpu', dest='gpu_setting', choices=['1', '2', '3'], default='2', help='1 for CPU, 2 for GPU, 3 for CuDNN')
 parser.add_option('--log-game', dest='log_game', action='store_true', default=False)
 parser.add_option('--dst', dest='dst_view', choices=['3', '5'], default='5')
+parser.add_option('--attentive', dest='attentive', choices=[True, False], default=True)
 
 (options, args) = parser.parse_args()
 
-hyper_info = '{}_{}-r{}{}-d{}-t{}-batsiz{}-{}steps-lr{}-lr2{}-{}-acteval_{}'.format(
+hyper_info = '{}_{}-r{}{}-d{}-t{}-batsiz{}-{}steps-lr{}-lr2{}-{}-acteval_{}-attentive{}'.format(
     options.agent, options.net_type, options.replay, str(options.buffer_size), options.dup, options.timesteps, 
-    options.batch_size, options.steps, str(options.lr_c), str(options.lr_a), options.mode, options.obj_func)
+    options.batch_size, options.steps, str(options.lr_c), str(options.lr_a), options.mode, options.obj_func, str(options.attentive))
 
 # create evironment
 env = DeepSeaTreasure(view=(5,5), full=True, scale=9) if options.dst_view == '5' else DeepSeaTreasure(view=(3,3), scale=15)
@@ -82,7 +83,8 @@ agent = deep_agent(env,
                    action_conc=options.action_conc,
                    feature_embd=options.feature_embd,
                    extra='{}_{}'.format(timestamp, hyper_info),
-                   gpu_setting=options.gpu_setting)
+                   gpu_setting=options.gpu_setting,
+                   attentive=options.attentive)
 
 steps_per_weight = 5000 if options.mode == 'sparse' else 1
 

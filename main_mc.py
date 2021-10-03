@@ -35,7 +35,7 @@ parser.add_option('--buffer-a', dest='buffer_a', default='2.', help='Reply buffe
 parser.add_option('--buffer-e', dest='buffer_e', default='0.01', help='Reply buffer error offset', type=float)
 parser.add_option('-u', '--update-period', dest='updates', default='4', help='Update interval', type=int)
 parser.add_option('-f', '--frame-skip', dest='frame_skip', default='4', help='Frame skip', type=int)
-parser.add_option('-b', '--batch-size', dest='batch_size', default='32', help='Sample batch size', type=int)
+parser.add_option('-b', '--batch-size', dest='batch_size', default='64', help='Sample batch size', type=int)
 parser.add_option('-g', '--discount', dest='discount', default='0.98', help='Discount factor', type=float)
 parser.add_option('--anneal-steps', dest='steps', default='100000', help='Steps',  type=int)
 parser.add_option('-c', '--mode', dest='mode', choices=['regular', 'sparse'], default='sparse')
