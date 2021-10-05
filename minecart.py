@@ -1,38 +1,36 @@
-"""Minecart envirnment
-
-partially observable version of https://github.com/axelabels/DynMORL/blob/master/minecart.py
-more compatible with OpenAI gym envs
-"""
-
 from __future__ import print_function
 
-import sys
 import math
 import random
-import itertools
+import os
+import json
 
 import numpy as np
 import scipy.stats
-from scipy.spatial import ConvexHull
-
-from utils import truncated_mean, compute_angle, pareto_filter
+import sys
+from gym import Env
+from gym.spaces import Box, Discrete
+from scipy.stats import norm
 
 
 try:
     import cairocffi as cairo
     CAIRO = True
-    print("Using cairocffi backend", file=sys.stderr)
+    print("Using cairocffi backend",file=sys.stderr)
 except:
-    print("Failed to import cairocffi, trying cairo...", file=sys.stderr)
+    print("Failed to import cairocffi, trying cairo...",file=sys.stderr)
     try:
         import cairo
         CAIRO = True
-        print("Using cairo backend", file=sys.stderr)
+        print("Using cairo backend",file=sys.stderr)
     except:
-        print("Failed to import cairo, trying pygame...", file=sys.stderr)
-        import pygame
-        CAIRO = False
-        print("Using pygame backend", file=sys.stderr)
+        print("Failed to import cairo, trying pygame...",file=sys.stderr)
+        try:
+            import pygame
+            CAIRO = False
+            print("Using pygame backend",file=sys.stderr)
+        except:
+            print('Failed to import pygame, rendering should not be used!',file=sys.stderr)
 
 
 EPS_SPEED = 0.001  # Minimum speed to be considered in motion
@@ -55,32 +53,14 @@ ACT_RIGHT = 2
 ACT_ACCEL = 3
 ACT_BRAKE = 4
 ACT_NONE = 5
-FUEL_LIST = [FUEL_MINE + FUEL_IDLE, FUEL_IDLE, FUEL_IDLE,
-             FUEL_IDLE + FUEL_ACC, FUEL_IDLE, FUEL_IDLE]
-FUEL_DICT = {ACT_MINE: FUEL_MINE + FUEL_IDLE, ACT_LEFT: FUEL_IDLE, ACT_RIGHT: FUEL_IDLE,
-             ACT_ACCEL: FUEL_IDLE + FUEL_ACC, ACT_BRAKE: FUEL_IDLE, ACT_NONE: FUEL_IDLE}
 ACTIONS = ["Mine", "Left", "Right", "Accelerate", "Brake", "None"]
 ACTION_COUNT = len(ACTIONS)
-
 
 MINE_RADIUS = 0.14
 BASE_RADIUS = 0.15
 
-# State space (whole map) vars
 WIDTH = 480
 HEIGHT = 480
-
-# Observation space vars
-OBSERVE_WIDTH = int(WIDTH / 2)
-OBSERVE_HEIGHT = int(HEIGHT / 2)
-
-# Pre-calculated space vars for add margin
-M_WIDTH = WIDTH + OBSERVE_WIDTH
-M_HEIGHT = HEIGHT + OBSERVE_HEIGHT
-W_MIN = int(OBSERVE_WIDTH/2)
-W_MAX = int(OBSERVE_WIDTH/2 + WIDTH)
-H_MIN = int(OBSERVE_HEIGHT/2)
-H_MAX = int(OBSERVE_HEIGHT/2 + HEIGHT)
 
 # Color definitions
 WHITE = (255, 255, 255)
@@ -91,7 +71,7 @@ BLACK = (0, 0, 0)
 RED = (255, 70, 70)
 C_RED = (1., 70 / 255., 70 / 255.)
 
-FPS = 180
+FPS = 24
 
 MINE_LOCATION_TRIES = 100
 
@@ -104,11 +84,10 @@ MARGIN = 0.16 * CART_SCALE
 ACCELERATION = 0.0075 * CART_SCALE
 DECELERATION = 1
 
-CART_IMG = 'images/cart.png'
-MINE_IMG = 'images/mine.png'
+CART_IMG = os.path.join(os.path.dirname(__file__), 'images', 'cart.png')
+MINE_IMG = os.path.join(os.path.dirname(__file__), 'images', 'mine.png')
 
-
-class Mine():
+class Mine(object):
     """Class representing an individual Mine
     """
 
@@ -143,13 +122,14 @@ class Mine():
 
         for i, dist in enumerate(self.distributions):
             mean, std = dist.mean(), dist.std()
-            means[i] = truncated_mean(mean, std, 0, float("inf"))
-            if np.isnan(means[i]):
-                means[i] = 0
+            if np.isnan(mean):
+                mean, std = dist.rvs(), 0
+            means[i] = truncated_mean(mean,std,0,np.inf)
+
         return means
 
 
-class Cart():
+class Cart(object):
     """Class representing the actual minecart
     """
 
@@ -200,10 +180,11 @@ class Cart():
 
         return True
 
-
-class Minecart():
+class Minecart(Env):
     """Minecart environment
     """
+
+    a_space = ACTION_COUNT
 
     def __init__(self,
                  mine_cnt=3,
@@ -212,9 +193,36 @@ class Minecart():
                  mine_distributions=None,
                  ore_colors=None):
 
-        self.action_space = np.arange(ACTION_COUNT)
-        self.observation_space = np.zeros((OBSERVE_WIDTH, OBSERVE_HEIGHT, 3), dtype=np.uint8)
+        super(Minecart, self).__init__()
 
+        self.capacity = capacity
+        self.ore_cnt = ore_cnt
+        self.ore_colors = ore_colors or [(np.random.randint(
+            40, 255), np.random.randint(40, 255), np.random.randint(40, 255))
+            for i in range(self.ore_cnt)]
+
+        self.mine_cnt = mine_cnt
+        self.generate_mines(mine_distributions)
+        self.cart = Cart(self.ore_cnt)
+
+        self.end = False
+
+        low = np.append(np.array([0, 0, 0, 0]), np.zeros(ore_cnt))
+        high = np.append(np.array([1, 1, MAX_SPEED, 360]), np.ones(ore_cnt)*capacity)
+        self.observation_space = Box(low=low, high=high, dtype=np.float32)
+        # self.action_space = Discrete(ACTION_COUNT)
+        low = np.zeros(ore_cnt+1, dtype=np.float32)
+        # assuming frameskip=4
+        low[-1] = (FUEL_IDLE+FUEL_MINE)*4
+        high = np.ones(ore_cnt+1)*capacity
+        high[-1] = 0
+        self.reward_space = Box(low=low, high=high, dtype=np.float32)
+
+        self._initialized_render = False
+
+    def _init_render(self):
+        """initialize graphics backend, if there is rendering.
+        """
         # Initialize graphics backend
         if CAIRO:
             self.surface = cairo.ImageSurface(cairo.FORMAT_RGB24, WIDTH,
@@ -233,188 +241,23 @@ class Minecart():
                 pygame.image.load(CART_IMG).convert_alpha(), 0,
                 CART_SCALE)
 
-        self.capacity = capacity
-        self.ore_cnt = ore_cnt
-        self.ore_colors = ore_colors or [(np.random.randint(
-            40, 255), np.random.randint(40, 255), np.random.randint(40, 255))
-            for i in range(self.ore_cnt)]
+            self.mine_sprites = pygame.sprite.Group()
+            self.mine_rects = []
+            for mine in self.mines:
+                mine_sprite = pygame.sprite.Sprite()
+                mine_sprite.image = pygame.transform.rotozoom(
+                    pygame.image.load(MINE_IMG), mine.rotation,
+                    MINE_SCALE).convert_alpha()
+                self.mine_sprites.add(mine_sprite)
+                mine_sprite.rect = mine_sprite.image.get_rect()
+                mine_sprite.rect.centerx = (
+                    mine.pos[0] * (1 - 2 * MARGIN)) * WIDTH + MARGIN * WIDTH
+                mine_sprite.rect.centery = (
+                    mine.pos[1] * (1 - 2 * MARGIN)) * HEIGHT + MARGIN * HEIGHT
+                self.mine_rects.append(mine_sprite.rect)
 
-        self.mine_cnt = mine_cnt
-        self.generate_mines(mine_distributions)
-        self.cart = Cart(self.ore_cnt)
-
-        self.end = False
-        self.obj_cnt = self.ore_cnt + 1
-
-    def convex_coverage_set(self, frame_skip=1, discount=0.98, incremental_frame_skip=True, symmetric=True):
-        """
-            Computes an approximate convex coverage set
-
-            Keyword Arguments:
-                frame_skip {int} -- How many times each action is repeated (default: {1})
-                discount {float} -- Discount factor to apply to rewards (default: {1})
-                incremental_frame_skip {bool} -- Wether actions are repeated incrementally (default: {1})
-                symmetric {bool} -- If true, we assume the pattern of accelerations from the base to the mine is the same as from the mine to the base (default: {True})
-
-            Returns:
-                The convex coverage set
-        """
-        policies = self.pareto_coverage_set(
-            frame_skip, discount, incremental_frame_skip, symmetric)
-        origin = np.min(policies, axis=0)
-        extended_policies = [origin] + policies
-        return [policies[idx - 1] for idx in ConvexHull(extended_policies).vertices if idx != 0]
-
-    def pareto_coverage_set(self, frame_skip=1, discount=0.98, incremental_frame_skip=True, symmetric=True):
-        """
-            Computes an approximate pareto coverage set
-
-            Keyword Arguments:
-                frame_skip {int} -- How many times each action is repeated (default: {1})
-                discount {float} -- Discount factor to apply to rewards (default: {1})
-                incremental_frame_skip {bool} -- Wether actions are repeated incrementally (default: {1})
-                symmetric {bool} -- If true, we assume the pattern of accelerations from the base to the mine is the same as from the mine to the base (default: {True})
-
-            Returns:
-                The pareto coverage set
-        """
-        all_rewards = []
-        base_perimeter = BASE_RADIUS * BASE_SCALE
-
-        # Empty mine just outside the base
-        virtual_mine = Mine(self.ore_cnt, (base_perimeter**2 / 2)
-                            ** (1 / 2), (base_perimeter**2 / 2)**(1 / 2))
-        virtual_mine.distributions = [
-            scipy.stats.norm(0, 0)
-            for _ in range(self.ore_cnt)
-        ]
-        for mine in (self.mines + [virtual_mine]):
-            mine_distance = mag(mine.pos - HOME_POS) - \
-                MINE_RADIUS * MINE_SCALE - BASE_RADIUS * BASE_SCALE / 2
-
-            # Number of rotations required to face the mine
-            angle = compute_angle(mine.pos, HOME_POS, [1, 1])
-            rotations = int(math.ceil(abs(angle) / (ROTATION * frame_skip)))
-
-            # Build pattern of accelerations/nops to reach the mine
-            # initialize with single acceleration
-            queue = [{"speed": ACCELERATION * frame_skip, "dist": mine_distance - frame_skip *
-                      (frame_skip + 1) / 2 * ACCELERATION if incremental_frame_skip else mine_distance - ACCELERATION * frame_skip * frame_skip, "seq": [ACT_ACCEL]}]
-            trimmed_sequences = []
-
-            while len(queue) > 0:
-                seq = queue.pop()
-                # accelerate
-                new_speed = seq["speed"] + ACCELERATION * frame_skip
-                accelerations = new_speed / ACCELERATION
-                movement = accelerations * (accelerations + 1) / 2 * ACCELERATION - (
-                    accelerations - frame_skip) * ((accelerations - frame_skip) + 1) / 2 * ACCELERATION
-                dist = seq["dist"] - movement
-                speed = new_speed
-                if dist <= 0:
-                    trimmed_sequences.append(seq["seq"] + [ACT_ACCEL])
-                else:
-                    queue.append({"speed": speed, "dist": dist,
-                                  "seq": seq["seq"] + [ACT_ACCEL]})
-                # idle
-                dist = seq["dist"] - seq["speed"] * frame_skip
-
-                if dist <= 0:
-                    trimmed_sequences.append(seq["seq"] + [ACT_NONE])
-                else:
-                    queue.append(
-                        {"speed": seq["speed"], "dist": dist, "seq": seq["seq"] + [ACT_NONE]})
-
-            # Build rational mining sequences
-            mine_means = mine.distribution_means() * frame_skip
-            mn_sum = np.sum(mine_means)
-            # on average it takes up to this many actions to fill cart
-            max_mine_actions = 0 if mn_sum == 0 else int(
-                math.ceil(self.capacity / mn_sum))
-
-            # all possible mining sequences (i.e. how many times we mine)
-            mine_sequences = [[ACT_MINE] *
-                              i for i in range(1, max_mine_actions + 1)]
-
-            # All possible combinations of actions before, during and after mining
-            if len(mine_sequences) > 0:
-                if not symmetric:
-                    all_sequences = map(
-                        lambda sequences: list(sequences[0]) + list(sequences[1]) + list(
-                            sequences[2]) + list(
-                            sequences[3]) + list(
-                            sequences[4]),
-                        itertools.product([[ACT_LEFT] * rotations],
-                                          trimmed_sequences,
-                                          [[ACT_BRAKE] + [ACT_LEFT] *
-                                              (180 // (ROTATION * frame_skip))],
-                                          mine_sequences,
-                                          trimmed_sequences)
-                    )
-
-                else:
-                    all_sequences = map(
-                        lambda sequences: list(sequences[0]) + list(sequences[1]) + list(
-                            sequences[2]) + list(
-                            sequences[3]) + list(
-                            sequences[1]),
-                        itertools.product([[ACT_LEFT] * rotations],
-                                          trimmed_sequences,
-                                          [[ACT_BRAKE] + [ACT_LEFT] *
-                                              (180 // (ROTATION * frame_skip))],
-                                          mine_sequences)
-                    )
-            else:
-                if not symmetric:
-                    print([ACT_NONE] + trimmed_sequences[1:],
-                          trimmed_sequences[1:], trimmed_sequences)
-                    all_sequences = map(
-                        lambda sequences: list(sequences[0]) + list(sequences[1]) + list(
-                            sequences[2]) + [ACT_NONE] + list(
-                            sequences[3])[1:],
-                        itertools.product([[ACT_LEFT] * rotations],
-                                          trimmed_sequences,
-                                          [[ACT_LEFT] *
-                                              (180 // (ROTATION * frame_skip))],
-                                          trimmed_sequences)
-                    )
-
-                else:
-                    all_sequences = map(
-                        lambda sequences: list(sequences[0]) + list(sequences[1]) + list(
-                            sequences[2]) + [ACT_NONE] + list(
-                            sequences[1][1:]),
-                        itertools.product([[ACT_LEFT] * rotations],
-                                          trimmed_sequences,
-                                          [[ACT_LEFT] * (180 // (ROTATION * frame_skip))])
-                    )
-
-            # Compute rewards for each sequence
-            fuel_costs = np.array([f * frame_skip for f in FUEL_LIST])
-
-            def maxlen(l):
-                if len(l) == 0:
-                    return 0
-                return max([len(s) for s in l])
-
-            longest_pattern = maxlen(trimmed_sequences)
-            max_len = rotations + longest_pattern + 1 + \
-                (180 // (ROTATION * frame_skip)) + \
-                maxlen(mine_sequences) + longest_pattern
-            discount_map = discount**np.arange(max_len)
-            for s in all_sequences:
-                reward = np.zeros((len(s), self.obj_cnt()))
-                reward[:, -1] = fuel_costs[s]
-                mine_actions = s.count(ACT_MINE)
-                reward[-1, :-1] = mine_means * mine_actions / \
-                    max(1, (mn_sum * mine_actions) / self.capacity)
-
-                reward = np.dot(discount_map[:len(s)], reward)
-                all_rewards.append(reward)
-
-            all_rewards = pareto_filter(all_rewards, minimize=False)
-
-        return all_rewards
+    def obj_cnt(self):
+        return self.ore_cnt + 1
 
     @staticmethod
     def from_json(filename):
@@ -423,8 +266,8 @@ class Minecart():
             Args:
                 filename: JSON configuration filename
         """
-        import json
-        data = json.load(open(filename))
+        with open(filename) as f:
+            data = json.load(f)
         ore_colors = None if "ore_colors" not in data else data["ore_colors"]
         minecart = Minecart(
             ore_cnt=data["ore_cnt"],
@@ -465,30 +308,13 @@ class Minecart():
         self.initialize_mines()
 
     def initialize_mines(self):
-        """Assign a random rotation to each mine, and initialize the necessary sprites
-        for the Pygame backend
+        """Assign a random rotation to each mine
         """
 
         for mine in self.mines:
             mine.rotation = np.random.randint(0, 360)
 
-        if not CAIRO:
-            self.mine_sprites = pygame.sprite.Group()
-            self.mine_rects = []
-            for mine in self.mines:
-                mine_sprite = pygame.sprite.Sprite()
-                mine_sprite.image = pygame.transform.rotozoom(
-                    pygame.image.load(MINE_IMG), mine.rotation,
-                    MINE_SCALE).convert_alpha()
-                self.mine_sprites.add(mine_sprite)
-                mine_sprite.rect = mine_sprite.image.get_rect()
-                mine_sprite.rect.centerx = (
-                    mine.pos[0] * (1 - 2 * MARGIN)) * WIDTH + MARGIN * WIDTH
-                mine_sprite.rect.centery = (
-                    mine.pos[1] * (1 - 2 * MARGIN)) * HEIGHT + MARGIN * HEIGHT
-                self.mine_rects.append(mine_sprite.rect)
-
-    def step(self, action, frame_skip=4, incremental_frame_skip=True):
+    def step(self, action, frame_skip=4):
         """Perform the given action `frame_skip` times
          ["Mine", "Left", "Right", "Accelerate", "Brake", "None"]
         Arguments:
@@ -496,10 +322,9 @@ class Minecart():
 
         Keyword Arguments:
             frame_skip {int} -- Repeat the action this many times (default: {1})
-            incremental_frame_skip {bool} -- If True, frame_skip actions are performed in succession, otherwise the repeated actions are performed simultaneously (e.g., 4 accelerations are performed and then the cart moves).
 
         Returns:
-            tuple -- (observation, reward, terminal, info) tuple
+            tuple -- (state, reward, terminal) tuple
         """
         change = False  # Keep track of whether the state has changed
 
@@ -516,32 +341,25 @@ class Minecart():
             reward[-1] += FUEL_ACC * frame_skip
         elif action == ACT_MINE:
             reward[-1] += FUEL_MINE * frame_skip
-
-        for _ in range(frame_skip if incremental_frame_skip else 1):
+        for _ in range(frame_skip):
 
             if action == ACT_LEFT:
-                self.cart.rotate(-ROTATION *
-                                 (1 if incremental_frame_skip else frame_skip))
+                self.cart.rotate(-ROTATION)
                 change = True
             elif action == ACT_RIGHT:
-                self.cart.rotate(
-                    ROTATION * (1 if incremental_frame_skip else frame_skip))
+                self.cart.rotate(ROTATION)
                 change = True
             elif action == ACT_ACCEL:
-                self.cart.accelerate(
-                    ACCELERATION * (1 if incremental_frame_skip else frame_skip))
+                self.cart.accelerate(ACCELERATION)
             elif action == ACT_BRAKE:
-                self.cart.accelerate(-DECELERATION *
-                                     (1 if incremental_frame_skip else frame_skip))
+                self.cart.accelerate(-DECELERATION)
             elif action == ACT_MINE:
-                for _ in range(1 if incremental_frame_skip else frame_skip):
-                    change = self.mine() or change
+                change = self.mine() or change
 
             if self.end:
                 break
 
-            for _ in range(1 if incremental_frame_skip else frame_skip):
-                change = self.cart.step() or change
+            change = self.cart.step() or change
 
             distanceFromBase = mag(self.cart.pos - HOME_POS)
             if distanceFromBase < BASE_RADIUS * BASE_SCALE:
@@ -555,13 +373,10 @@ class Minecart():
                 # Cart left base
                 self.cart.departed = True
 
-        if not self.end and change:
-            self.render()
+        # if not self.end and change:
+        #     self.render()
 
-        info = self.get_state(change)
-        observation = self.observation_space
-        # observation (pixels), reward (list), done (boolean), info (dict)
-        return observation, reward, self.end, info
+        return self.get_state(change), reward.astype(np.float32), self.end, {}
 
     def mine(self):
         """Perform the MINE action
@@ -605,52 +420,25 @@ class Minecart():
                     WIDTH, HEIGHT, 4)[:, :, [2, 1, 0]]
             else:
                 self.pixels = pygame.surfarray.array3d(self.screen)
-            
-            self.get_observation()
 
         return self.pixels
 
     def get_state(self, update=True):
         """Returns the environment's full state, including the cart's position,
-        its speed, its orientation and its content, as well as the environment's
-        pixels
+        its speed, its orientation and its content,
 
         Keyword Arguments:
             update {bool} -- Whether to update the representation (default: {True})
 
         Returns:
-            dict -- dict containing the aforementioned elements
+            np.ndarray -- array containing the aforementioned elements
         """
 
-        return {
-            "position": self.cart.pos,
-            "speed": self.cart.speed,
-            "orientation": self.cart.angle,
-            "content": self.cart.content,
-            "pixels": self.get_pixels(update)
-        }
-
-    def get_observation(self):
-        """Create a partially observable observation with the given state. 
-        partial view of state["pixels"] with origin of state["position"], and the 
-        overflow part is black
-        
-        Returns:
-            array: 3d array as the same type of state["pixels"]
-        """
-
-        # original state pixels with margins
-        margin_state_pixels = np.zeros((M_WIDTH, M_HEIGHT, 3), dtype=np.uint8)
-        margin_state_pixels[W_MIN : W_MAX, H_MIN : H_MAX, :] = self.pixels
-
-        min_x = int(self.cart.pos[0] * (1 - 2 * MARGIN) * WIDTH + MARGIN * WIDTH)
-        min_y = int(self.cart.pos[1] * (1 - 2 * MARGIN) * HEIGHT + MARGIN * HEIGHT)
-
-        self.observation_space = margin_state_pixels[min_x : int(min_x + OBSERVE_WIDTH), min_y : int(min_y + OBSERVE_HEIGHT), :]
-        return self.observation_space
+        return np.append(self.cart.pos,
+                        [self.cart.speed, self.cart.angle, *self.cart.content]).astype(np.float32)
 
     def reset(self):
-        """Resets the environment to the start state
+        """Reset's the environment to the start state
 
         Returns:
             [type] -- [description]
@@ -662,9 +450,8 @@ class Minecart():
         self.cart.angle = 45
         self.cart.departed = False
         self.end = False
-        self.render()
-        self.get_state()
-        return self.observation_space
+
+        return self.get_state()
 
     def __str__(self):
         string = "Completed: {} ".format(self.end)
@@ -676,14 +463,19 @@ class Minecart():
         string += "Position: {} ".format(self.cart.pos)
         return string
 
-    def render(self):
+    def render(self, mode='rgb_array'):
         """Update the environment's representation
         """
-
+        # initalized graphics the first time there is rendering
+        if not self._initialized_render:
+            self._initialized_render = True
+            self._init_render()
         if CAIRO:
             self.render_cairo()
         else:
             self.render_pygame()
+
+        return self.get_pixels()
 
     def render_cairo(self):
 
@@ -731,7 +523,7 @@ class Minecart():
     def render_pygame(self):
 
         pygame.event.get()
-        self.clock.tick(FPS)
+        # self.clock.tick(FPS)
 
         self.mine_sprites.update()
 
@@ -777,11 +569,11 @@ class Minecart():
                     rect_height))
 
         pygame.display.update()
-
+    
+    def action_space(self):
+        return range(ACTION_COUNT)
 
 images = {}
-
-
 def draw_image(ctx, image, top, left, scale, rotation):
     """Rotate, scale and draw an image on a cairo context
     """
@@ -819,8 +611,9 @@ def rot_center(image, angle):
     return rot_image
 
 
+
 def mag(vector2d):
-    return np.sqrt(np.dot(vector2d, vector2d))
+    return np.sqrt(np.dot(vector2d,vector2d))
 
 
 def clip(val, lo, hi):
@@ -831,24 +624,16 @@ def scl(c):
     return (c[0] / 255., c[1] / 255., c[2] / 255.)
 
 
+def truncated_mean(mean, std, a, b):
+    if std == 0:
+        return mean
+    from scipy.stats import norm
+    a = (a - mean) / std
+    b = (b - mean) / std
+    PHIB = norm.cdf(b)
+    PHIA = norm.cdf(a)
+    phib = norm.pdf(b)
+    phia = norm.pdf(a)
 
-# if __name__ == '__main__':
-#     KEY = {pygame.K_UP: 3, pygame.K_DOWN: 4, pygame.K_LEFT: 1, pygame.K_RIGHT: 2, pygame.K_c: 0}
-
-#     json_file = "mine_config.json"
-#     env = Minecart.from_json(json_file)
-#     o_t = env.reset()
-#     terminal = False
-#     a_t = None
-
-#     while not terminal:
-#         event = pygame.event.wait()
-#         if event.type == pygame.KEYDOWN:
-#             if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
-#                 break
-#             else:
-#                 a_t = KEY[event.key]
-#             o_t1, r_t, terminal, s_t1 = env.step(a_t)
-#             o_t = o_t1
-#             print("Taking action", a_t, "at", s_t1["position"], "with reward", r_t)
-#     env.reset()
+    trunc_mean = (mean + ((phia - phib) / (PHIB - PHIA)) * std)
+    return trunc_mean

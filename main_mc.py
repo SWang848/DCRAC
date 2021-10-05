@@ -3,8 +3,23 @@ import numpy as np
 from optparse import OptionParser
 
 from minecart import Minecart
-from agent import *
+from agent_mc import *
 from utils import *
+
+import gym
+from gym.spaces import Box
+
+class PixelMinecart(gym.ObservationWrapper):
+
+    def __init__(self, env):
+        # don't actually display pygame on screen
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        super(PixelMinecart, self).__init__(env)
+        self.observation_space = Box(low=0, high=255, shape=(480, 480, 3), dtype=np.uint8)
+
+    def observation(self, obs):
+        obs = self.render('rgb_array')
+        return obs
 
 AGENT_DICT = {
     'DCRAC': DCRACAgent,
@@ -27,39 +42,42 @@ parser.add_option('-r', '--replay', dest='replay', default='DER', choices=['STD'
 parser.add_option('-s', '--buffer-size', dest='buffer_size', default='100000', help='Replay buffer size', type=int)
 parser.add_option('-m', '--memnn-size', dest='memnn_size', default='10', help='Memory network memory size', type=int)
 parser.add_option('-d', '--dupe', dest='dupe', default='CN', choices=['CN', 'NONE'], help='Extra training')
-parser.add_option('-t', '--timesteps', dest='timesteps', default='10', help='Recurrent timesteps', type=int)
+parser.add_option('-t', '--timesteps', dest='timesteps', default='4', help='Recurrent timesteps', type=int)
 parser.add_option('-e', '--end_e', dest='end_e', default='0.05', help='Final epsilon value', type=float)
 parser.add_option('-l', '--lr-c', dest='lr_c', default='0.02', help='Critic learning rate', type=float)
 parser.add_option('-L', '--lr-a', dest='lr_a', default='0.001', help='Actor learning rate', type=float)
 parser.add_option('--buffer-a', dest='buffer_a', default='2.', help='Reply buffer error exponent', type=float)
 parser.add_option('--buffer-e', dest='buffer_e', default='0.01', help='Reply buffer error offset', type=float)
-parser.add_option('-u', '--update-period', dest='updates', default='4', help='Update interval', type=int)
+parser.add_option('-u', '--update-period', dest='updates', default='2', help='Update interval', type=int)
 parser.add_option('-f', '--frame-skip', dest='frame_skip', default='4', help='Frame skip', type=int)
 parser.add_option('-b', '--batch-size', dest='batch_size', default='64', help='Sample batch size', type=int)
-parser.add_option('-g', '--discount', dest='discount', default='0.98', help='Discount factor', type=float)
+parser.add_option('-g', '--discount', dest='discount', default='0.99', help='Discount factor', type=float)
 parser.add_option('--anneal-steps', dest='steps', default='100000', help='Steps',  type=int)
-parser.add_option('-c', '--mode', dest='mode', choices=['regular', 'sparse'], default='sparse')
+parser.add_option('-c', '--mode', dest='mode', choices=['regular', 'sparse'], default='regular')
 parser.add_option('-v', '--obj-func', dest='obj_func', choices=['td', 'q', 'y'], default='td')
-parser.add_option('--gpu', dest='gpu_setting', choices=['1', '2', '3'], default='3', help='1 for CPU, 2 for GPU, 3 for CuDNN')
+parser.add_option('--gpu', dest='gpu_setting', choices=['1', '2', '3'], default='2', help='1 for CPU, 2 for GPU, 3 for CuDNN')
 parser.add_option('--log-game', action='store_true', dest='log_game')
 
 
 (options, args) = parser.parse_args()
 
 hyper_info = '{}-r{}{}-d{}-t{}-batsiz{}-lr{}-{}-eval{}'.format(
-    options.alg, options.replay, str(options.buffer_size), options.dupe, options.timesteps, 
+    options.agent, options.replay, str(options.buffer_size), options.dupe, options.timesteps, 
     options.batch_size, str(options.lr_c), options.mode, options.obj_func)
 
 # create evironment
-json_file = 'mine_config.json'
+json_file = "mine_config.json"
 env = Minecart.from_json(json_file)
+pixel_env = PixelMinecart(env)
+obj_cnt = env.obj_cnt()
 
-all_weights = get_weights_from_json('./train_weights_minecart.json')
+all_weights = list(np.loadtxt("regular_weights_mine"))
 
 log_file = open('output/logs/mc_rewards_{}.log'.format(hyper_info), 'w', 1)
 
 deep_agent = AGENT_DICT[options.agent]
-agent = deep_agent(env, 
+agent = deep_agent(env,
+                   pixel_env,
                    gamma=options.discount,
                    weights=None,
                    timesteps=10,
@@ -76,7 +94,7 @@ agent = deep_agent(env,
                    lr_2=options.lr_a,
                    frame_skip=options.frame_skip,
                    update_interval=options.updates,
-                   dupe=None if options.dupe == 'NONE' else options.dupe,
+                   dup=None if options.dupe == 'NONE' else options.dupe,
                    extra=hyper_info,
                    gpu_setting=options.gpu_setting)
 

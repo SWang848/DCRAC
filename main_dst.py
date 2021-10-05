@@ -88,6 +88,7 @@ agent = deep_agent(env,
 
 steps_per_weight = 5000 if options.mode == 'sparse' else 1
 
+all_weights = get_weights_from_json('./train_weights_dst_r.json')
 log_file_name = 'output/logs/{}_dst{}_rewards_{}.log'.format(timestamp, options.dst_view, hyper_info)
 with open(log_file_name, 'w', 1) as log_file:
     agent.train(log_file, options.steps, all_weights, steps_per_weight, options.steps*10, log_game_step=options.log_game)

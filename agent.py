@@ -657,9 +657,6 @@ class DCRACAgent:
 
 
 
-
-
-
 class DCRACSAgent(DCRACAgent):
     def build_models(self):
         # Make only critic network (creates target model internally).
