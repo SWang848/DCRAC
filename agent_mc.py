@@ -52,7 +52,7 @@ class DCRACAgent:
                  feature_embd=True,
                  extra=None,
                  gpu_setting='1',
-                 attentive=True):
+                 attentive=False):
         
         self.env = env
         self.pixel_env = pixel_env
@@ -92,7 +92,10 @@ class DCRACAgent:
 
         self.im_size = im_size
         channel = 1 if grayscale else 3
-        self.im_shape = im_size + (channel, )
+        if len(im_size) > 1:
+            self.im_shape = im_size + (channel, )
+        else:
+            self.im_shape = im_size
 
         self.lr_2 = lr_2
         self.lr = lr
@@ -199,8 +202,8 @@ class DCRACAgent:
         pred_idx = None
 
         current_state_raw = self.env.reset()
-        self.current_state, last_action = self.history.reset_with_raw_frame(self.pixel_env.observation(current_state_raw), fill=self.fill_history)
-
+        # self.current_state, last_action = self.history.reset_with_raw_frame(self.pixel_env.observation(current_state_raw), fill=self.fill_history)
+        self.current_state, last_action = self.history.reset_with_raw_frame(current_state_raw, fill=self.fill_history)
 
         for step in range(self.total_steps):
 
@@ -212,7 +215,8 @@ class DCRACAgent:
 
             # perform the action
             next_state_raw, reward, terminal, info = self.env.step(action, self.frame_skip)
-            next_state, next_last_action = self.history.add_raw_frame(self.pixel_env.observation(next_state_raw), action)
+            # next_state, next_last_action = self.history.add_raw_frame(self.pixel_env.observation(next_state_raw), action)
+            next_state, next_last_action = self.history.add_raw_frame(next_state_raw, action)
 
             if self.log_game_step:
                 print("Taking action", action, "under prob", acts_prob, "at", info["position"], "with reward", reward)
@@ -245,7 +249,8 @@ class DCRACAgent:
             
             if terminal or episode_steps > self.max_episode_length:
                 current_state_raw = self.env.reset()
-                self.current_state, last_action = self.history.reset_with_raw_frame(self.pixel_env.observation(current_state_raw), fill=self.fill_history)
+                # self.current_state, last_action = self.history.reset_with_raw_frame(self.pixel_env.observation(current_state_raw), fill=self.fill_history)
+                self.current_state, last_action = self.history.reset_with_raw_frame(current_state_raw, fill=self.fill_history)
                 pred_idx = None
 
                 is_weight_change = int(

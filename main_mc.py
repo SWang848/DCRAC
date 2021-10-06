@@ -96,7 +96,8 @@ agent = deep_agent(env,
                    update_interval=options.updates,
                    dup=None if options.dupe == 'NONE' else options.dupe,
                    extra=hyper_info,
-                   gpu_setting=options.gpu_setting)
+                   gpu_setting=options.gpu_setting,
+                   im_size=(6,))
 
 steps_per_weight = 50000 if options.mode == 'sparse' else 1
 agent.train(log_file, options.steps, all_weights, steps_per_weight, options.steps*10, log_game_step=options.log_game)

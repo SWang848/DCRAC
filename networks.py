@@ -101,12 +101,19 @@ class Network(ABC):
         x = observation_input
         if self.normalize:
             x = Lambda(lambda x: x / 255., name="input_normalizer")(x)
-
-        # Convolutional layers
-        for c, (filters, kernel_size, strides) in enumerate(zip(CONV_FILTERS, CONV_KERNEL_SIZES, CONV_STRIDES)):
-            x = TimeDistributed(Conv2D(filters=filters, kernel_size=kernel_size, strides=strides), name="td_conv{}".format(c))(x)
-            x = LeakyReLU(L_ALPHA, name="td_conv_leaky_relu{}".format(c))(x)
-            x = TimeDistributed(MaxPooling2D(), name="td_conv_pooling{}".format(c))(x)
+        
+        # 1D state, not image
+        if len(self.observation_dim) == 1:
+            for c, u in enumerate([20, 20]):
+                x = TimeDistributed(Dense(u), name="td_dense{}".format(c))(x)
+                x = LeakyReLU(L_ALPHA, name="td_dense_leaky_relu{}".format(c))(x)
+        # 2D state, image
+        else:
+            # Convolutional layers
+            for c, (filters, kernel_size, strides) in enumerate(zip(CONV_FILTERS, CONV_KERNEL_SIZES, CONV_STRIDES)):
+                x = TimeDistributed(Conv2D(filters=filters, kernel_size=kernel_size, strides=strides), name="td_conv{}".format(c))(x)
+                x = LeakyReLU(L_ALPHA, name="td_conv_leaky_relu{}".format(c))(x)
+                x = TimeDistributed(MaxPooling2D(), name="td_conv_pooling{}".format(c))(x)
         
         if self.action_conc:
             action_embd_layer = action_last_input

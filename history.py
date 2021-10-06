@@ -20,10 +20,14 @@ class History():
                 length: How many frames should be stored in the history
                 im_shape: Target size to crop to, im_shape = (WIDTH,HEIGHT,CHANNEL)
         """
-        assert len(im_shape) == 3
+        # assert len(im_shape) == 3
 
-        self.im_shape = im_shape
-        self.black_and_white = True if im_shape[2] == 1 else False
+        if len(im_shape) == 3:
+            self.im_shape = im_shape
+            self.black_and_white = True if im_shape[2] == 1 else False
+        else:
+            self.im_shape = im_shape
+            self.black_and_white = False
         self.length = length
 
         self.history_o = None
@@ -84,7 +88,9 @@ class History():
         Returns:
             np.array -- The processed frame
         """
-
+        if len(self.im_shape) < 3:
+            return raw_frame
+            
         if self.black_and_white:
             raw_frame = cv2.cvtColor(raw_frame,cv2.COLOR_RGB2GRAY)
        

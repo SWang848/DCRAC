@@ -28,7 +28,7 @@ parser.add_option('-a', '--agent', dest='agent', choices=['DCRAC', 'DCRACS', 'DC
 parser.add_option('-n', '--net-type', dest='net_type', choices=['R', 'M', 'F'], default='R', help='Agent architecture type: [R]ecurrent, [M]emNN or [F]C')
 parser.add_option('-r', '--replay', dest='replay', default='DER', choices=['STD', 'DER'], help='Replay type, one of "STD","DER"')
 parser.add_option('-s', '--buffer-size', dest='buffer_size', default='10000', help='Replay buffer size', type=int)
-parser.add_option('-m', '--memnn-size', dest='memnn_size', default='4', help='Memory network memory size', type=int)
+parser.add_option('-m', '--memnn-size', dest='memnn_size', default='10', help='Memory network memory size', type=int)
 parser.add_option('-d', '--dup', dest='dup', action='store_false', default=True, help='Extra training')
 parser.add_option('-t', '--timesteps', dest='timesteps', default='4', help='Recurrent timesteps', type=int)
 parser.add_option('-e', '--end_e', dest='end_e', default='0.01', help='Final epsilon value', type=float)
@@ -48,7 +48,7 @@ parser.add_option('--no-embd', dest='feature_embd', action='store_false', defaul
 parser.add_option('--gpu', dest='gpu_setting', choices=['1', '2', '3'], default='2', help='1 for CPU, 2 for GPU, 3 for CuDNN')
 parser.add_option('--log-game', dest='log_game', action='store_true', default=False)
 parser.add_option('--dst', dest='dst_view', choices=['3', '5'], default='5')
-parser.add_option('--attentive', dest='attentive', choices=[True, False], default=True)
+parser.add_option('--attentive', dest='attentive', choices=[True, False], default=False)
 
 (options, args) = parser.parse_args()
 
